@@ -6,8 +6,6 @@ class DDPM(nn.Module):
     '''
         Denoising Diffussion Probabilistic Model
         
-        Inputs:
-
         Args:
             batch_size (int): batch_size, for generate time_seq, etc.
             iteration (int): max time_seq
