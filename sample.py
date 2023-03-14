@@ -4,17 +4,23 @@ from ddpm import DDPM
 from unet import Unet
 import sys
 import os
-
-BATCH_SIZE = 256
-ITERATION = 500
-TIME_EMB_DIM = 128
-DEVICE = torch.device('cuda')
+import configparser
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         print("Usage: python sample.py [pic_num]")
         exit()
+    
+    # read config file
+    config = configparser.ConfigParser()
+    config.read('training.ini')
 
+    BATCH_SIZE      =   int(config['unet']['batch_size'])
+    ITERATION       =   int(config['ddpm']['iteration'])
+    TIME_EMB_DIM    =   int(config['unet']['time_emb_dim'])
+    DEVICE          =   torch.device(config['unet']['device'])
+
+    # start sampling
     model = Unet(TIME_EMB_DIM, DEVICE).to(DEVICE)
     ddpm = DDPM(int(sys.argv[1]), ITERATION, 1e-4, 2e-2, DEVICE)
 
