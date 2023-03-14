@@ -2,6 +2,8 @@
 
 A Simple implementation of DDPM model in PyTorch.
 
+It's just for fun, the Unet model does not include attention, normalization, etc.
+
 ![](./images/Screenshot_20230314_225320.png)
 ![](./images/ezgif.com-gif-maker.gif)
 
