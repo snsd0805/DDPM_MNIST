@@ -51,12 +51,15 @@ class DDPM(nn.Module):
 
         return mu + sigma * epsilon, epsilon                                                                # (b, c, w, h)
     
-    def sample(self, model, generate_iteration_pic=False, n=None):
+    def sample(self, model, generate_iteration_pic=False, n=None, target=None, classifier=None, classifier_scale=0.5):
         '''
             Inputs:
                 model (nn.Module): Unet instance
                 generate_iteration_pic (bool): whether generate 10 pic on different denoising time
                 n (int, default=self.batch_size): want to sample n pictures
+                target (int, default=None): conditional target
+                classifier (int, default=None): for conditional diffusion model
+                classifier_scale (float): scaling classifier's control
             Outputs:
                 x_0 (nn.Tensor): (n, c, h, w)
         '''
@@ -65,25 +68,43 @@ class DDPM(nn.Module):
         c, h, w = 1, 28, 28
         model.eval()
         with torch.no_grad():
-            x_t = torch.randn((n, c, h, w)).to(self.device)             # (n, c, h, w)
+            x_t = torch.randn((n, c, h, w)).to(self.device)                             # (n, c, h, w)
+            x_t += 0.2
             for i in reversed(range(self.iteration)):
-                time_seq = (torch.ones(n) * i).long().to(self.device)       # (n, )
-                predict_noise = model(x_t, time_seq)                        # (n, c, h, w)
+                time_seq = (torch.ones(n) * i).long().to(self.device)                   # (n, )
+                predict_noise = model(x_t, time_seq)                                    # (n, c, h, w)
 
-                first_term = 1/(torch.sqrt(self.alpha[time_seq]))           # (n, )
+                first_term = 1/(torch.sqrt(self.alpha[time_seq]))
                 second_term = (1-self.alpha[time_seq]) / (torch.sqrt(1-self.overline_alpha[time_seq]))
 
-                first_term = first_term[:, None, None, None].repeat(1, c, h, w)
-                second_term = second_term[:, None, None, None].repeat(1, c, h, w)
+                first_term = first_term[:, None, None, None].repeat(1, c, h, w)         # (n, c, h, w)
+                second_term = second_term[:, None, None, None].repeat(1, c, h, w)       # (n, c, h, w)
 
-                beta = self.beta[time_seq][:, None, None, None].repeat(1, c, h, w)
+                beta = self.beta[time_seq][:, None, None, None].repeat(1, c, h, w)      # (n, c, h, w)
 
+
+                mu = first_term * (x_t-(second_term * predict_noise))       # origin mu   (n, c, h, w)
+
+                # if conditional => get classifier gradient
+                if target != None and classifier != None:
+                    with torch.enable_grad():
+                        # ref: https://github.com/clalanliu/IntroductionDiffusionModels/blob/main/control_diffusion.ipynb
+                        x = x_t.detach()
+                        x.requires_grad_(True)
+
+                        logits = classifier(x, time_seq)                                # (b, 10)
+                        log_probs = nn.LogSoftmax(dim=1)(logits)                        # (b, 10)
+                        selected = log_probs[:, target]                                 # (b)
+                        grad = torch.autograd.grad(selected.sum(), x)[0]                # 
+                    mu = mu + beta * classifier_scale * grad
+
+                # mask
                 if i!= 0:
                     z = torch.randn((n, c, h, w)).to(self.device)
                 else:
                     z = torch.zeros((n, c, h, w)).to(self.device)
 
-                x_t = first_term * (x_t-(second_term * predict_noise)) - z * beta
+                x_t = mu - z * beta                                         # origin mu
 
                 # generate 10 pic on the different denoising times
                 if generate_iteration_pic:
